@@ -1,11 +1,13 @@
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Menu, Wrench } from "lucide-react";
 
 export const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
 
   const navItems = [
     { name: "Features", href: "#features" },
@@ -38,10 +40,12 @@ export const Header = () => {
         </nav>
 
         <div className="hidden md:flex items-center space-x-4">
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/auth")}>
             Sign In
           </Button>
-          <Button size="sm">Get Started</Button>
+          <Button size="sm" onClick={() => navigate("/auth")}>
+            Get Started
+          </Button>
         </div>
 
         {/* Mobile Navigation */}
@@ -64,8 +68,12 @@ export const Header = () => {
                 </a>
               ))}
               <div className="flex flex-col space-y-2 pt-4">
-                <Button variant="ghost">Sign In</Button>
-                <Button>Get Started</Button>
+                <Button variant="ghost" onClick={() => navigate("/auth")}>
+                  Sign In
+                </Button>
+                <Button onClick={() => navigate("/auth")}>
+                  Get Started
+                </Button>
               </div>
             </div>
           </SheetContent>
