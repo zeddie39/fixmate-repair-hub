@@ -1,35 +1,26 @@
 
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { 
-  Users, 
-  Wrench, 
-  Clock, 
-  DollarSign, 
-  TrendingUp,
-  UserCheck,
-  Settings,
-  BarChart3
-} from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Users, Wrench, DollarSign, Clock, TrendingUp, BarChart3 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { DashboardHeader } from '@/components/DashboardHeader';
+import { AnalyticsDashboard } from '@/components/AnalyticsDashboard';
 
 export const AdminDashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState({
     totalRequests: 0,
-    activeRequests: 0,
-    totalCustomers: 0,
-    totalTechnicians: 0,
+    pendingRequests: 0,
+    completedRequests: 0,
     totalRevenue: 0,
-    avgResolutionTime: 0,
+    activeTechnicians: 0,
+    customerCount: 0,
   });
   const [recentRequests, setRecentRequests] = useState([]);
-  const [technicians, setTechnicians] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -38,71 +29,65 @@ export const AdminDashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch repair requests stats
+      // Fetch repair requests
       const { data: requests } = await supabase
-        .from('repair_requests')
-        .select('*');
-
-      // Fetch users by role
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*');
-
-      // Fetch recent requests with details
-      const { data: recent } = await supabase
         .from('repair_requests')
         .select(`
           *,
           device_types(name, category),
-          profiles!repair_requests_customer_id_fkey(full_name, email),
+          profiles!repair_requests_customer_id_fkey(full_name),
           profiles!repair_requests_technician_id_fkey(full_name)
         `)
         .order('created_at', { ascending: false })
         .limit(10);
 
-      if (requests && profiles) {
-        const activeRequests = requests.filter(r => 
-          !['completed', 'cancelled'].includes(r.status)
-        ).length;
-        
-        const customers = profiles.filter(p => p.role === 'customer').length;
-        const techs = profiles.filter(p => p.role === 'technician');
-        
-        const completedRequests = requests.filter(r => r.status === 'completed');
-        const totalRevenue = completedRequests.reduce((sum, r) => 
-          sum + (r.final_cost || r.estimated_cost || 0), 0
-        );
+      // Fetch user counts
+      const { data: customers } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'customer');
+
+      const { data: technicians } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'technician');
+
+      if (requests) {
+        const totalRequests = requests.length;
+        const pendingRequests = requests.filter(r => ['submitted', 'assigned'].includes(r.status)).length;
+        const completedRequests = requests.filter(r => r.status === 'completed').length;
+        const totalRevenue = requests
+          .filter(r => r.final_cost)
+          .reduce((sum, r) => sum + parseFloat(r.final_cost.toString()), 0);
 
         setStats({
-          totalRequests: requests.length,
-          activeRequests,
-          totalCustomers: customers,
-          totalTechnicians: techs.length,
+          totalRequests,
+          pendingRequests,
+          completedRequests,
           totalRevenue,
-          avgResolutionTime: 0, // Calculate based on actual data
+          activeTechnicians: technicians?.length || 0,
+          customerCount: customers?.length || 0,
         });
 
-        setTechnicians(techs);
-        setRecentRequests(recent || []);
+        setRecentRequests(requests);
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  const assignTechnician = async (requestId: string, technicianId: string) => {
-    const { error } = await supabase
-      .from('repair_requests')
-      .update({ 
-        technician_id: technicianId,
-        status: 'assigned'
-      })
-      .eq('id', requestId);
-
-    if (!error) {
-      fetchDashboardData();
-    }
+  const getStatusColor = (status: string) => {
+    const colors: Record<string, string> = {
+      submitted: 'bg-blue-500',
+      assigned: 'bg-yellow-500',
+      diagnosing: 'bg-orange-500',
+      repairing: 'bg-purple-500',
+      completed: 'bg-green-500',
+      cancelled: 'bg-red-500',
+    };
+    return colors[status] || 'bg-gray-500';
   };
 
   if (loading) {
@@ -118,169 +103,156 @@ export const AdminDashboard = () => {
       <DashboardHeader />
       
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold">Admin Dashboard</h1>
-          <p className="text-muted-foreground">Overview of your repair business</p>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">Admin Dashboard</h1>
+            <p className="text-muted-foreground">Manage and monitor your repair service</p>
+          </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
-              <Wrench className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalRequests}</div>
-              <p className="text-xs text-muted-foreground">
-                {stats.activeRequests} active
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Customers</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalCustomers}</div>
-              <p className="text-xs text-muted-foreground">
-                Registered users
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Technicians</CardTitle>
-              <UserCheck className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.totalTechnicians}</div>
-              <p className="text-xs text-muted-foreground">
-                Active technicians
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Revenue</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">${stats.totalRevenue.toFixed(2)}</div>
-              <p className="text-xs text-muted-foreground">
-                Total completed
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Tabs for different sections */}
-        <Tabs defaultValue="requests" className="space-y-4">
+        <Tabs defaultValue="overview" className="space-y-4">
           <TabsList>
-            <TabsTrigger value="requests">Recent Requests</TabsTrigger>
-            <TabsTrigger value="technicians">Manage Technicians</TabsTrigger>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="requests">Recent Requests</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="requests" className="space-y-4">
-            {recentRequests.map((request: any) => (
-              <Card key={request.id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg">
-                        {request.device_types?.name} - {request.device_brand}
-                      </CardTitle>
-                      <CardDescription>
-                        Customer: {request.profiles?.full_name} ({request.profiles?.email})
-                      </CardDescription>
-                    </div>
-                    <Badge>
-                      {request.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                    </Badge>
-                  </div>
+          <TabsContent value="overview" className="space-y-4">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Requests</CardTitle>
+                  <Wrench className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <p className="text-sm">{request.problem_description}</p>
-                    
-                    {request.status === 'submitted' && (
-                      <div className="flex gap-2">
-                        <select 
-                          className="px-3 py-2 border rounded-md"
-                          onChange={(e) => {
-                            if (e.target.value) {
-                              assignTechnician(request.id, e.target.value);
-                            }
-                          }}
-                        >
-                          <option value="">Assign Technician</option>
-                          {technicians.map((tech: any) => (
-                            <option key={tech.id} value={tech.id}>
-                              {tech.full_name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                  </div>
+                  <div className="text-2xl font-bold">{stats.totalRequests}</div>
+                  <p className="text-xs text-muted-foreground">
+                    <span className="text-green-600 flex items-center">
+                      <TrendingUp className="h-3 w-3 mr-1" />
+                      +12% from last month
+                    </span>
+                  </p>
                 </CardContent>
               </Card>
-            ))}
-          </TabsContent>
 
-          <TabsContent value="technicians" className="space-y-4">
-            <div className="grid gap-4">
-              {technicians.map((tech: any) => (
-                <Card key={tech.id}>
-                  <CardHeader>
-                    <CardTitle>{tech.full_name}</CardTitle>
-                    <CardDescription>{tech.email}</CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">
-                        Phone: {tech.phone || 'Not provided'}
-                      </span>
-                      <Badge variant="outline">Active</Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Pending Requests</CardTitle>
+                  <Clock className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats.pendingRequests}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Awaiting assignment or diagnosis
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">${stats.totalRevenue.toLocaleString()}</div>
+                  <p className="text-xs text-muted-foreground">
+                    <span className="text-green-600 flex items-center">
+                      <TrendingUp className="h-3 w-3 mr-1" />
+                      +8% from last month
+                    </span>
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Active Technicians</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats.activeTechnicians}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Currently available
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Customers</CardTitle>
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{stats.customerCount}</div>
+                  <p className="text-xs text-muted-foreground">
+                    Registered users
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Completion Rate</CardTitle>
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {stats.totalRequests > 0 ? Math.round((stats.completedRequests / stats.totalRequests) * 100) : 0}%
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Successfully completed repairs
+                  </p>
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
           <TabsContent value="analytics" className="space-y-4">
-            <div className="grid gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <BarChart3 className="h-5 w-5" />
-                    Performance Metrics
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="flex justify-between">
-                      <span>Average Resolution Time</span>
-                      <span className="font-medium">2.5 days</span>
+            <AnalyticsDashboard />
+          </TabsContent>
+
+          <TabsContent value="requests" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Repair Requests</CardTitle>
+                <CardDescription>Latest requests submitted by customers</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {recentRequests.map((request: any) => (
+                    <div key={request.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-2">
+                          <h4 className="font-medium">
+                            {request.device_brand} {request.device_model}
+                          </h4>
+                          <Badge 
+                            className={`text-white ${getStatusColor(request.status)}`}
+                          >
+                            {request.status}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Customer: {request.profiles?.full_name || 'Unknown'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {request.problem_description.substring(0, 100)}...
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-medium">
+                          {request.estimated_cost ? `$${request.estimated_cost}` : 'No estimate'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(request.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Customer Satisfaction</span>
-                      <span className="font-medium">4.8/5</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Completion Rate</span>
-                      <span className="font-medium">95%</span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>

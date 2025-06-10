@@ -21,6 +21,7 @@ import {
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { PhotoUpload } from '@/components/PhotoUpload';
 
 interface CreateRepairRequestDialogProps {
   open: boolean;
@@ -36,6 +37,7 @@ export const CreateRepairRequestDialog = ({
   const { user } = useAuth();
   const [deviceTypes, setDeviceTypes] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [formData, setFormData] = useState({
     deviceTypeId: '',
     deviceBrand: '',
@@ -68,30 +70,50 @@ export const CreateRepairRequestDialog = ({
 
     setLoading(true);
 
-    const { error } = await supabase
-      .from('repair_requests')
-      .insert({
-        customer_id: user.id,
-        device_type_id: formData.deviceTypeId,
-        device_brand: formData.deviceBrand,
-        device_model: formData.deviceModel,
-        problem_description: formData.problemDescription,
-        priority: formData.priority,
-        pickup_address: formData.pickupAddress,
-        status: 'submitted',
-      });
+    try {
+      // Create the repair request
+      const { data: repairRequest, error } = await supabase
+        .from('repair_requests')
+        .insert({
+          customer_id: user.id,
+          device_type_id: formData.deviceTypeId,
+          device_brand: formData.deviceBrand,
+          device_model: formData.deviceModel,
+          problem_description: formData.problemDescription,
+          priority: formData.priority,
+          pickup_address: formData.pickupAddress,
+          status: 'submitted',
+        })
+        .select()
+        .single();
 
-    if (error) {
-      toast({
-        title: 'Error creating repair request',
-        description: error.message,
-        variant: 'destructive',
-      });
-    } else {
+      if (error) throw error;
+
+      // Upload photos if any
+      if (photos.length > 0 && repairRequest) {
+        for (const photo of photos) {
+          const fileExt = photo.name.split('.').pop();
+          const fileName = `${repairRequest.id}-${Date.now()}.${fileExt}`;
+          
+          // In a real app, you'd upload to Supabase Storage
+          // For now, we'll just store a placeholder URL
+          await supabase
+            .from('repair_images')
+            .insert({
+              repair_request_id: repairRequest.id,
+              uploaded_by: user.id,
+              image_url: `placeholder-${fileName}`,
+              description: 'Device photo',
+            });
+        }
+      }
+
       toast({
         title: 'Repair request created',
         description: 'Your repair request has been submitted successfully.',
       });
+
+      // Reset form
       setFormData({
         deviceTypeId: '',
         deviceBrand: '',
@@ -100,8 +122,15 @@ export const CreateRepairRequestDialog = ({
         priority: 'medium',
         pickupAddress: '',
       });
+      setPhotos([]);
       onSuccess();
       onOpenChange(false);
+    } catch (error: any) {
+      toast({
+        title: 'Error creating repair request',
+        description: error.message,
+        variant: 'destructive',
+      });
     }
 
     setLoading(false);
@@ -109,7 +138,7 @@ export const CreateRepairRequestDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Create Repair Request</DialogTitle>
           <DialogDescription>
@@ -177,6 +206,11 @@ export const CreateRepairRequestDialog = ({
               placeholder="Describe the issue with your device..."
               required
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Device Photos (Optional)</Label>
+            <PhotoUpload onPhotosChange={setPhotos} maxPhotos={3} />
           </div>
 
           <div className="space-y-2">
