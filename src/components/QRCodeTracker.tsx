@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { QrCode, Download } from 'lucide-react';
+import { QrCode, Download, Search } from 'lucide-react';
 
 interface QRCodeTrackerProps {
   repairRequestId: string;
@@ -42,45 +42,52 @@ export const QRCodeTracker = ({ repairRequestId, onTrackingUpdate }: QRCodeTrack
   };
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <QrCode className="h-5 w-5" />
-            <span>QR Code Tracking</span>
-          </CardTitle>
-          <CardDescription>
-            Generate a QR code for easy tracking or scan to check status
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col items-center space-y-4">
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="flex items-center space-x-2 text-base sm:text-lg">
+          <QrCode className="h-4 w-4 sm:h-5 sm:w-5" />
+          <span>QR Code Tracking</span>
+        </CardTitle>
+        <CardDescription className="text-sm">
+          Generate a QR code for easy tracking or scan to check status
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="w-full max-w-[200px]">
             <img
               src={generateQRCode()}
               alt="QR Code"
-              className="border rounded-lg"
+              className="w-full h-auto border rounded-lg"
             />
-            <Button onClick={downloadQRCode} variant="outline">
-              <Download className="h-4 w-4 mr-2" />
-              Download QR Code
+          </div>
+          <Button onClick={downloadQRCode} variant="outline" size="sm" className="w-full sm:w-auto">
+            <Download className="h-4 w-4 mr-2" />
+            Download QR Code
+          </Button>
+        </div>
+        
+        <div className="border-t pt-4">
+          <h4 className="font-medium mb-2 text-sm">Track by Code</h4>
+          <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+            <Input
+              placeholder="Enter tracking code"
+              value={trackingCode}
+              onChange={(e) => setTrackingCode(e.target.value)}
+              className="flex-1"
+            />
+            <Button 
+              onClick={trackRepair} 
+              disabled={isTracking}
+              size="sm"
+              className="w-full sm:w-auto"
+            >
+              <Search className="h-4 w-4 mr-2" />
+              {isTracking ? 'Tracking...' : 'Track'}
             </Button>
           </div>
-          
-          <div className="border-t pt-4">
-            <h4 className="font-medium mb-2">Track by Code</h4>
-            <div className="flex space-x-2">
-              <Input
-                placeholder="Enter tracking code"
-                value={trackingCode}
-                onChange={(e) => setTrackingCode(e.target.value)}
-              />
-              <Button onClick={trackRepair} disabled={isTracking}>
-                {isTracking ? 'Tracking...' : 'Track'}
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
